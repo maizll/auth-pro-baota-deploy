@@ -26,9 +26,8 @@ probe_os_arch() {
   PROBE_OS="$(uname -s 2>/dev/null || echo unknown)"
   local pretty=""
   if [[ -f /etc/os-release ]]; then
-    # shellcheck disable=SC1091
-    . /etc/os-release
-    pretty="${PRETTY_NAME:-${NAME:-}}"
+    # 勿 source /etc/os-release：其中的 VERSION 会污染安装脚本的软件版本变量
+    pretty="$(. /etc/os-release; printf '%s' "${PRETTY_NAME:-${NAME:-}}")"
   fi
   PROBE_ARCH="$(uname -m 2>/dev/null || echo unknown)"
   probe_log "操作系统: ${pretty:-${PROBE_OS}} ($(uname -r 2>/dev/null || echo '?'))"

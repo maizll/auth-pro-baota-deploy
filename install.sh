@@ -21,7 +21,7 @@ DEFAULT_VERSION="1.2.0"
 SITE_ROOT=""
 PORT="${PORT:-${DEFAULT_PORT}}"
 PACKAGE_FILE=""
-VERSION=""
+PACKAGE_VERSION=""
 PACKAGE_URL=""
 DATA_DIR="${AUTO_PRO_DATA_DIR:-}"
 ASSUME_YES=0
@@ -98,7 +98,7 @@ parse_args() {
       --package)
         PACKAGE_FILE="${2:-}"; shift 2 ;;
       --version)
-        VERSION="${2:-}"; shift 2 ;;
+        PACKAGE_VERSION="${2:-}"; shift 2 ;;
       --url)
         PACKAGE_URL="${2:-}"; shift 2 ;;
       --data-dir)
@@ -150,8 +150,11 @@ resolve_package_url() {
   if [[ -n "${PACKAGE_URL}" ]]; then
     return 0
   fi
-  local ver="${VERSION:-${DEFAULT_VERSION}}"
-  VERSION="${ver}"
+  local ver="${PACKAGE_VERSION:-${DEFAULT_VERSION}}"
+  if [[ ! "${ver}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    die "软件版本无效: '${ver}'（需要 X.Y.Z）。请使用 --version 1.2.0，勿与系统 VERSION 环境变量混淆"
+  fi
+  PACKAGE_VERSION="${ver}"
   PACKAGE_URL="https://github.com/zxcvbnm25/auth-pro-baota-deploy/releases/download/v${ver}/auth_pro-full-v${ver}.tar.gz"
 }
 
