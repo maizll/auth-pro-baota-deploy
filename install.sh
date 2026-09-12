@@ -381,6 +381,7 @@ RestartSec=5
 Environment=PORT=${PORT}
 Environment=AUTO_PRO_DATA_DIR=${DATA_DIR}
 Environment=SOFTWARE_SOURCE_DATA_DIR=${SITE_ROOT}/backend/software-source/data
+Environment=AUTO_PRO_UPDATE_URL=https://github.com/zxcvbnm25/auth-pro-baota-deploy/releases/latest/download/latest.json
 ${key_line}
 
 [Install]

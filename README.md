@@ -252,3 +252,14 @@ sudo bash reset-install.sh /www/wwwroot/auth.maizll.com
 ```
 
 确认输出里 `local status` 为 `{"installed":false}` 后再打开网站。
+
+
+## 在线更新源
+
+默认清单（公开仓库）：
+
+```text
+https://github.com/zxcvbnm25/auth-pro-baota-deploy/releases/latest/download/latest.json
+```
+
+一键安装会写入服务环境变量 `AUTO_PRO_UPDATE_URL`。主仓 `cloud-control-auth` 为私有仓，不适合作为匿名更新源。
