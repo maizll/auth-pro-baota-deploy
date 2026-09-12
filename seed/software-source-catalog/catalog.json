@@ -1,0 +1,14 @@
+{
+  "revision": 1,
+  "sources": [
+    {
+      "id": "local",
+      "name": "本地软件源",
+      "type": "json",
+      "state": "ok"
+    }
+  ],
+  "categories": [],
+  "plugins": [],
+  "templates": []
+}

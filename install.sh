@@ -6,6 +6,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/deps.sh
 source "${SCRIPT_DIR}/lib/deps.sh"
+# shellcheck source=lib/catalog_ensure.sh
+source "${SCRIPT_DIR}/lib/catalog_ensure.sh"
 # shellcheck source=lib/probe.sh
 source "${SCRIPT_DIR}/lib/probe.sh"
 # shellcheck source=lib/baota.sh
@@ -378,6 +380,7 @@ Restart=on-failure
 RestartSec=5
 Environment=PORT=${PORT}
 Environment=AUTO_PRO_DATA_DIR=${DATA_DIR}
+Environment=SOFTWARE_SOURCE_DATA_DIR=${SITE_ROOT}/backend/software-source/data
 ${key_line}
 
 [Install]
@@ -636,6 +639,7 @@ main() {
   fi
   ensure_fresh_install
   prepare_data_dir
+  ensure_software_source_catalog "${SITE_ROOT}" "${SCRIPT_DIR}"
   install_process_service
 
   # D. Nginx 自动写入

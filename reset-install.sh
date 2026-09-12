@@ -54,6 +54,7 @@ Restart=on-failure
 RestartSec=5
 Environment=PORT=$PORT
 Environment=AUTO_PRO_DATA_DIR=$DATA_DIR
+Environment=SOFTWARE_SOURCE_DATA_DIR=$SITE/backend/software-source/data
 
 [Install]
 WantedBy=multi-user.target
@@ -71,8 +72,35 @@ else
   else
     echo "Environment=PORT=$PORT" >> "$UNIT"
   fi
+  if grep -q '^Environment=SOFTWARE_SOURCE_DATA_DIR=' "$UNIT"; then
+    sed -i "s|^Environment=SOFTWARE_SOURCE_DATA_DIR=.*|Environment=SOFTWARE_SOURCE_DATA_DIR=$SITE/backend/software-source/data|" "$UNIT"
+  else
+    echo "Environment=SOFTWARE_SOURCE_DATA_DIR=$SITE/backend/software-source/data" >> "$UNIT"
+  fi
   # 去掉可能妨碍写数据的沙箱
   sed -i '/^ProtectSystem=/d;/^PrivateTmp=/d;/^NoNewPrivileges=/d' "$UNIT" || true
+fi
+
+
+# 缺 catalog.json 会导致 auth_pro 启动 Fatal
+mkdir -p "$SITE/backend/software-source/data"
+if [[ ! -f "$SITE/backend/software-source/data/catalog.json" ]]; then
+  if [[ -f "$(dirname "$0")/seed/software-source-catalog/catalog.json" ]]; then
+    cp -a "$(dirname "$0")/seed/software-source-catalog/catalog.json" "$SITE/backend/software-source/data/catalog.json"
+  else
+    cat > "$SITE/backend/software-source/data/catalog.json" <<'JSON'
+{
+  "revision": 1,
+  "sources": [
+    { "id": "local", "name": "本地软件源", "type": "json", "state": "ok" }
+  ],
+  "categories": [],
+  "plugins": [],
+  "templates": []
+}
+JSON
+  fi
+  echo "[reset] ✓ 已写入 software-source catalog.json"
 fi
 
 systemctl daemon-reload
