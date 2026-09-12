@@ -239,3 +239,15 @@ sudo bash install.sh --site-root /www/wwwroot/auth.maizll.com --yes --fresh
 然后在宝塔重建空 MySQL 库，再打开站点走安装向导。
 
 `--fresh` 会：停止服务、删除 `install.lock`/`db.json`、清空数据目录；**不会**自动删 MySQL 库。
+
+
+## 仍跳过安装向导时
+
+先跑强制复位（在服务器上）：
+
+```bash
+cd /tmp && git clone https://github.com/zxcvbnm25/auth-pro-baota-deploy.git && cd auth-pro-baota-deploy
+sudo bash reset-install.sh /www/wwwroot/auth.maizll.com
+```
+
+确认输出里 `local status` 为 `{"installed":false}` 后再打开网站。

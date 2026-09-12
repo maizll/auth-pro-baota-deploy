@@ -372,7 +372,7 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=${SITE_ROOT}
+WorkingDirectory=${SITE_ROOT}/backend
 ExecStart=${bin}
 Restart=on-failure
 RestartSec=5
@@ -380,18 +380,29 @@ Environment=PORT=${PORT}
 Environment=AUTO_PRO_DATA_DIR=${DATA_DIR}
 ${key_line}
 
-NoNewPrivileges=true
-ProtectSystem=full
-PrivateTmp=true
-
 [Install]
 WantedBy=multi-user.target
 UNIT
   systemctl daemon-reload
   systemctl enable "${SERVICE_NAME}.service"
+  # 确保 19127 无残留旧进程
+  if command -v fuser >/dev/null 2>&1; then
+    fuser -k "${PORT}/tcp" 2>/dev/null || true
+  fi
   systemctl restart "${SERVICE_NAME}.service"
   ok "systemd 服务已启用并启动: ${SERVICE_NAME}"
   systemctl --no-pager -l status "${SERVICE_NAME}.service" || true
+  sleep 1
+  local pid
+  pid="$(systemctl show -p MainPID --value "${SERVICE_NAME}.service" 2>/dev/null || true)"
+  if [[ -n "${pid}" && "${pid}" != "0" && -r "/proc/${pid}/environ" ]]; then
+    local env_dump
+    env_dump="$(tr '\0' '\n' < "/proc/${pid}/environ" | grep -E '^(PORT|AUTO_PRO_DATA_DIR)=' || true)"
+    log "进程 ${pid} 环境: ${env_dump:-<未读到 AUTO_PRO_DATA_DIR>}"
+  fi
+  local st
+  st="$(curl -fsS --max-time 3 "http://127.0.0.1:${PORT}/api/install/status" 2>/dev/null || true)"
+  log "本机安装状态: ${st:-<无法连接>}"
 }
 
 # ---------- supervisor ----------
