@@ -9,6 +9,7 @@
 | `index.html` | 前端入口 |
 | `assets/` | 前端静态资源 |
 | `backend/auth_pro` | Linux amd64 后端二进制 |
+| `backend/software-source/data/catalog.json` | 软件源目录（随包） |
 | `manifest.json` | 版本/清单信息 |
 
 默认下载地址：
@@ -29,19 +30,19 @@ https://github.com/zxcvbnm25/auth-pro-baota-deploy/releases/download/vX.Y.Z/auth
 # 本地包（推荐）
 sudo bash install.sh \
   --site-root /www/wwwroot/你的站点域名或目录 \
-  --package /root/auth_pro-full-v1.2.0.tar.gz \
+  --package /root/auth_pro-full-v1.2.1.tar.gz \
   --yes
 
 # 或指定版本从 GitHub 拉取
 cd /tmp && git clone https://github.com/zxcvbnm25/auth-pro-baota-deploy.git \
   && cd auth-pro-baota-deploy \
-  && sudo bash install.sh --site-root /www/wwwroot/你的站点 --version 1.2.0 --yes
+  && sudo bash install.sh --site-root /www/wwwroot/你的站点 --version 1.2.1 --yes
 ```
 
 交互选择站点目录（列出 `/www/wwwroot`）：
 
 ```bash
-sudo bash bt-deploy.sh --package /root/auth_pro-full-v1.2.0.tar.gz --yes
+sudo bash bt-deploy.sh --package /root/auth_pro-full-v1.2.1.tar.gz --yes
 # 多个站点时请加: --site-root /www/wwwroot/xxx
 ```
 
@@ -97,7 +98,7 @@ sudo bash bt-deploy.sh --package /root/auth_pro-full-v1.2.0.tar.gz --yes
 - `chmod +x backend/auth_pro`
 - 默认 `AUTO_PRO_DATA_DIR=<site-root>/backend/data`
 - 安装并 enable+start systemd 或 supervisor
-- 默认版本 **1.2.0**；`--package` 本地路径为关键路径
+- 默认版本 **1.2.1**；`--package` 本地路径为关键路径
 
 ### F. 软件源 / 首页模板自动补全
 
