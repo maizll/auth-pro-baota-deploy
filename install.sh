@@ -27,6 +27,7 @@ DATA_DIR="${AUTO_PRO_DATA_DIR:-}"
 ASSUME_YES=0
 DO_UNINSTALL=0
 DO_PURGE=0
+DO_FRESH=0
 SKIP_DEPS=0
 SKIP_FIREWALL=0
 SKIP_NGINX_WRITE=0
@@ -69,6 +70,9 @@ auth-pro 宝塔「真·全自动一键」部署脚本
   --software-source-admin-key <密钥>  软件源管理密钥（同时写入服务环境变量）
   --uninstall            停止并移除服务单元（保留站点文件）
   --purge                卸载并删除站点内后端与本脚本写入的配置
+  --fresh                强制全新安装：清除 install.lock / db.json 等安装标记，
+                         并清空数据目录内容，确保浏览器进入「系统安装向导」
+                         （不会删 Nginx/站点静态文件；MySQL 库请在宝塔自行重建）
   --help, -h             显示帮助
 
 环境变量:
@@ -214,10 +218,89 @@ download_or_use_package() {
   chmod +x "${SITE_ROOT}/${BINARY_REL}"
   ok "已 chmod +x ${BINARY_REL}"
 
+  # 包内不应携带安装锁；若误带则去掉，避免跳过向导
+  clear_install_markers "${SITE_ROOT}" "${SITE_ROOT}/backend" "${SITE_ROOT}/backend/data"
+
+
   if [[ -f "${SITE_ROOT}/manifest.json" ]]; then
     ok "发现 manifest.json"
   else
     warn "未发现 manifest.json（非致命）"
+  fi
+}
+
+
+# ---------- 强制走安装向导 ----------
+# 一键部署不应静默留下「已安装」状态却没有用户记得的管理员密码。
+clear_install_markers() {
+  local roots=("$@")
+  local f
+  for f in \
+      install.lock \
+      db.json
+  do
+    local p
+    for rootp in "${roots[@]}"; do
+      [[ -n "${rootp}" ]] || continue
+      p="${rootp%/}/${f}"
+      if [[ -e "${p}" ]]; then
+        log "清除安装标记: ${p}"
+        rm -f "${p}"
+      fi
+    done
+  done
+  # 常见误放位置
+  for p in \
+      "${SITE_ROOT}/install.lock" \
+      "${SITE_ROOT}/backend/install.lock" \
+      "${SITE_ROOT}/backend/data/install.lock" \
+      "${SITE_ROOT}/db.json" \
+      "${SITE_ROOT}/backend/db.json" \
+      "${SITE_ROOT}/backend/data/db.json"
+  do
+    if [[ -e "${p}" ]]; then
+      log "清除安装标记: ${p}"
+      rm -f "${p}"
+    fi
+  done
+}
+
+ensure_fresh_install() {
+  if [[ -z "${DATA_DIR}" ]]; then
+    DATA_DIR="${SITE_ROOT}/backend/data"
+  fi
+  mkdir -p "${DATA_DIR}"
+
+  local lock="${DATA_DIR}/install.lock"
+  if [[ "${DO_FRESH}" -eq 1 ]]; then
+    log "已指定 --fresh：重置安装状态，强制进入系统安装向导"
+    # 停服务避免占用文件
+    if command -v systemctl >/dev/null 2>&1; then
+      systemctl stop "${SERVICE_NAME}" 2>/dev/null || true
+    fi
+    if command -v supervisorctl >/dev/null 2>&1; then
+      supervisorctl stop "${SERVICE_NAME}" 2>/dev/null || true
+    fi
+    clear_install_markers "${DATA_DIR}" "${SITE_ROOT}" "${SITE_ROOT}/backend" "${SITE_ROOT}/backend/data"
+    # 清空数据目录（保留目录本身）
+    if [[ -d "${DATA_DIR}" ]]; then
+      log "清空数据目录内容: ${DATA_DIR}"
+      find "${DATA_DIR}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+    fi
+    mkdir -p "${DATA_DIR}"
+    ok "已重置为未安装状态（请随后在浏览器完成安装向导并牢记管理员密码）"
+    warn "请在宝塔删除/重建对应 MySQL 库，避免向导连到旧库仍显示已有账号"
+    return 0
+  fi
+
+  # 未指定 --fresh：若已安装，明确警告
+  if [[ -f "${lock}" ]]; then
+    warn "检测到已安装标记: ${lock}"
+    warn "浏览器将跳过安装向导。若忘记管理员密码，请加 --fresh 重跑，例如："
+    warn "  sudo bash install.sh --site-root ${SITE_ROOT} --yes --fresh"
+    if [[ "${ASSUME_YES}" -eq 1 ]]; then
+      warn "当前为 --yes 但未加 --fresh，保留已有安装状态（不会重置密码）"
+    fi
   fi
 }
 
@@ -446,7 +529,7 @@ Nginx 写入:     ${NGX_LAST_MODE:-未写/跳过} ${NGX_LAST_TARGET:+→ ${NGX_L
 【请逐项确认】
   □ 1. 浏览器访问站点: ${hint_url}/  （或 http://${domain}/ ）
   □ 2. 在宝塔「数据库」创建 MySQL 库与用户，并在安装向导中填写连接
-  □ 3. 完成 admin 管理员注册/登录（安装向导）
+  □ 3. 打开站点应进入「系统安装向导」，创建管理员并牢记密码\n         （若直接进登录页，用 --fresh 重装：sudo bash install.sh --site-root … --yes --fresh）
   □ 4. 软件源索引 URL:
          ${hint_url}/api/software-source/index.json
   □ 5. 健康检查: curl -sS ${hint_url}/healthz  或  http://127.0.0.1:${PORT}/healthz
@@ -504,6 +587,11 @@ main() {
 
   # E. 包 + 进程
   download_or_use_package
+  # 先定数据目录并处理 --fresh / 已安装警告（必须在起服务前）
+  if [[ -z "${DATA_DIR}" ]]; then
+    DATA_DIR="${SITE_ROOT}/backend/data"
+  fi
+  ensure_fresh_install
   prepare_data_dir
   install_process_service
 

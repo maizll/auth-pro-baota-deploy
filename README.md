@@ -226,3 +226,16 @@ auth-pro-baota-deploy/
 ## 许可证
 
 MIT License © 2026 zxcvbnm25
+
+
+## 忘记管理员密码 / 强制重装向导
+
+一键脚本**不会**替你生成管理员密码。若部署后直接进入登录页且密码未知：
+
+```bash
+sudo bash install.sh --site-root /www/wwwroot/auth.maizll.com --yes --fresh
+```
+
+然后在宝塔重建空 MySQL 库，再打开站点走安装向导。
+
+`--fresh` 会：停止服务、删除 `install.lock`/`db.json`、清空数据目录；**不会**自动删 MySQL 库。
