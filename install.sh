@@ -127,6 +127,8 @@ parse_args() {
         DO_UNINSTALL=1; shift ;;
       --purge)
         DO_UNINSTALL=1; DO_PURGE=1; shift ;;
+      --fresh)
+        DO_FRESH=1; shift ;;
       --help|-h)
         usage; exit 0 ;;
       *)
