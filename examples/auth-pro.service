@@ -1,0 +1,20 @@
+[Unit]
+Description=Auth Pro Backend (cloud-control-auth)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/www/wwwroot/YOUR_SITE
+ExecStart=/www/wwwroot/YOUR_SITE/backend/auth_pro
+Restart=on-failure
+RestartSec=5
+Environment=PORT=19127
+Environment=AUTO_PRO_DATA_DIR=/www/wwwroot/YOUR_SITE/data
+# Environment=SOFTWARE_SOURCE_ADMIN_KEY=replace-me
+
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
