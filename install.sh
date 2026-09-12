@@ -529,7 +529,8 @@ Nginx 写入:     ${NGX_LAST_MODE:-未写/跳过} ${NGX_LAST_TARGET:+→ ${NGX_L
 【请逐项确认】
   □ 1. 浏览器访问站点: ${hint_url}/  （或 http://${domain}/ ）
   □ 2. 在宝塔「数据库」创建 MySQL 库与用户，并在安装向导中填写连接
-  □ 3. 打开站点应进入「系统安装向导」，创建管理员并牢记密码\n         （若直接进登录页，用 --fresh 重装：sudo bash install.sh --site-root … --yes --fresh）
+  □ 3. 打开站点应进入「系统安装向导」，创建管理员并牢记密码
+         （若直接进登录页，用 --fresh 重装：sudo bash install.sh --site-root … --yes --fresh）
   □ 4. 软件源索引 URL:
          ${hint_url}/api/software-source/index.json
   □ 5. 健康检查: curl -sS ${hint_url}/healthz  或  http://127.0.0.1:${PORT}/healthz
