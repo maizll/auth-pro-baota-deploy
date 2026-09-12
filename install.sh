@@ -19,7 +19,7 @@ source "${SCRIPT_DIR}/lib/seed.sh"
 
 # ---------- 默认值 ----------
 DEFAULT_PORT=19127
-DEFAULT_VERSION="1.2.1"
+DEFAULT_VERSION="1.2.2"
 SITE_ROOT=""
 PORT="${PORT:-${DEFAULT_PORT}}"
 PACKAGE_FILE=""
