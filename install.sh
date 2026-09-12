@@ -9,7 +9,7 @@ source "${SCRIPT_DIR}/lib/deps.sh"
 
 # ---------- 默认值 ----------
 DEFAULT_PORT=19127
-DEFAULT_VERSION="1.0.0"
+DEFAULT_VERSION="1.2.0"
 SITE_ROOT=""
 PORT="${PORT:-${DEFAULT_PORT}}"
 PACKAGE_FILE=""
@@ -60,7 +60,7 @@ auth-pro 宝塔一键部署脚本
 示例（宝塔 SSH 一键）:
   cd /tmp && git clone https://github.com/zxcvbnm25/auth-pro-baota-deploy.git \
     && cd auth-pro-baota-deploy \
-    && sudo bash install.sh --site-root /www/wwwroot/你的站点 --version 1.0.0 --yes
+    && sudo bash install.sh --site-root /www/wwwroot/你的站点 --version 1.2.0 --yes
 
 默认包地址:
   https://github.com/zxcvbnm25/cloud-control-auth/releases/download/vX.Y.Z/auth_pro-full-vX.Y.Z.tar.gz

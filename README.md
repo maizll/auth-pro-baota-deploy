@@ -26,19 +26,19 @@ https://github.com/zxcvbnm25/cloud-control-auth/releases/download/vX.Y.Z/auth_pr
 ```bash
 cd /tmp && git clone https://github.com/zxcvbnm25/auth-pro-baota-deploy.git \
   && cd auth-pro-baota-deploy \
-  && sudo bash install.sh --site-root /www/wwwroot/你的站点域名或目录 --version 1.0.0 --yes
+  && sudo bash install.sh --site-root /www/wwwroot/你的站点域名或目录 --version 1.2.0 --yes
 ```
 
 使用本地已下载的包：
 
 ```bash
-sudo bash install.sh --site-root /www/wwwroot/你的站点 --package /tmp/auth_pro-full-v1.0.0.tar.gz --yes
+sudo bash install.sh --site-root /www/wwwroot/你的站点 --package /tmp/auth_pro-full-v1.2.0.tar.gz --yes
 ```
 
 交互选择站点目录（列出 `/www/wwwroot`）：
 
 ```bash
-sudo bash bt-deploy.sh --version 1.0.0 --yes
+sudo bash bt-deploy.sh --version 1.2.0 --yes
 ```
 
 ---
