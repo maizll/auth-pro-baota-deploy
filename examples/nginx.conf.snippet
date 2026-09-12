@@ -1,11 +1,11 @@
-# 宝塔站点「配置文件」中，放入 server { ... } 内合适位置。
-# 由 install.sh 打印时会替换 __PORT__ / __SITE_ROOT__。
-#
-# 静态前端由站点根目录直接托管；API 反代到 auth_pro 后端。
+# 宝塔站点「配置文件」server { ... } 内合适位置，或由 install.sh 自动写入。
+# 占位符: __PORT__ / __SITE_ROOT__（install 打印时替换）。
+# 幂等标记: #AUTH_PRO_BEGIN ... #AUTH_PRO_END（升级脚本可安全替换中间内容）。
+# 优先推荐: 写入 /www/server/panel/vhost/nginx/extension/<站点名>/auth_pro.conf
+#           并在站点 conf 中 include 该目录（面板不易整文件覆盖）。
 
-    # 前端静态（宝塔默认 root 已指向站点目录时可省略）
-    # root __SITE_ROOT__;
-    # index index.html;
+#AUTH_PRO_BEGIN
+    # auth_pro — 静态由站点 root 提供；下列为 API/文档反代 + SPA 回退
 
     location /api/ {
         proxy_pass http://127.0.0.1:__PORT__;
@@ -21,16 +21,40 @@
         client_max_body_size 50m;
     }
 
-    # 若后端还提供其他前缀，按需追加，例如:
-    # location /auth/ {
-    #     proxy_pass http://127.0.0.1:__PORT__;
-    #     proxy_set_header Host $host;
-    #     proxy_set_header X-Real-IP $remote_addr;
-    #     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    #     proxy_set_header X-Forwarded-Proto $scheme;
-    # }
+    location /realname-face {
+        proxy_pass http://127.0.0.1:__PORT__;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 50m;
+    }
 
-    # SPA 回退（按实际前端路由需要开启）
-    # location / {
-    #     try_files $uri $uri/ /index.html;
-    # }
+    location = /openapi.yaml {
+        proxy_pass http://127.0.0.1:__PORT__;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location = /healthz {
+        proxy_pass http://127.0.0.1:__PORT__;
+        proxy_set_header Host $host;
+        access_log off;
+    }
+
+    location /docs {
+        proxy_pass http://127.0.0.1:__PORT__;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # SPA 回退（静态文件优先；与宝塔默认 location / 冲突时保留一处即可）
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+#AUTH_PRO_END

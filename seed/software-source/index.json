@@ -1,0 +1,27 @@
+{
+  "name": "auth-pro 演示软件源",
+  "version": "1.0.0",
+  "description": "宝塔一键部署附带的 hello-demo 目录（非付费插件，对齐 cloud-control-auth 演示风格）",
+  "categories": [
+    { "id": "demo", "name": "演示", "description": "hello-demo 示例分类" }
+  ],
+  "plugins": [
+    {
+      "id": "hello-demo",
+      "name": "Hello Demo",
+      "version": "0.1.0",
+      "category": "demo",
+      "description": "开源演示插件占位，非付费内容",
+      "paid": false,
+      "homepage": ""
+    }
+  ],
+  "templates": [
+    {
+      "id": "home-hello",
+      "name": "Hello 首页模板",
+      "version": "0.1.0",
+      "description": "演示用首页模板占位"
+    }
+  ]
+}

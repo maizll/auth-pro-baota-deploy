@@ -1,0 +1,10 @@
+{
+  "id": "hello-demo",
+  "name": "Hello Demo",
+  "version": "0.1.0",
+  "category": "demo",
+  "description": "开源演示插件占位，用于验证软件源目录与索引；非付费、无授权校验。",
+  "paid": false,
+  "author": "auth-pro-baota-deploy",
+  "entry": "index.js"
+}

@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
-# install.sh — auth_pro 宝塔一键部署入口
+# install.sh — auth_pro 宝塔「真·全自动一键」部署入口
 # 布局: index.html, assets/, backend/auth_pro, manifest.json
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/deps.sh
 source "${SCRIPT_DIR}/lib/deps.sh"
+# shellcheck source=lib/probe.sh
+source "${SCRIPT_DIR}/lib/probe.sh"
+# shellcheck source=lib/baota.sh
+source "${SCRIPT_DIR}/lib/baota.sh"
+# shellcheck source=lib/nginx_write.sh
+source "${SCRIPT_DIR}/lib/nginx_write.sh"
+# shellcheck source=lib/seed.sh
+source "${SCRIPT_DIR}/lib/seed.sh"
 
 # ---------- 默认值 ----------
 DEFAULT_PORT=19127
@@ -20,6 +28,11 @@ ASSUME_YES=0
 DO_UNINSTALL=0
 DO_PURGE=0
 SKIP_DEPS=0
+SKIP_FIREWALL=0
+SKIP_NGINX_WRITE=0
+SKIP_PROBE=0
+SEED_SOFTWARE_SOURCE=-1   # -1=随 --yes 默认开; 0=关; 1=开
+SOFTWARE_SOURCE_ADMIN_KEY_FLAG="${SOFTWARE_SOURCE_ADMIN_KEY:-}"
 SERVICE_NAME="auth-pro"
 BINARY_REL="backend/auth_pro"
 
@@ -32,21 +45,28 @@ die()  { err "$*"; exit 1; }
 
 usage() {
   cat <<'USAGE'
-auth-pro 宝塔一键部署脚本
+auth-pro 宝塔「真·全自动一键」部署脚本
 
 用法:
-  bash install.sh [选项]
+  bash install.sh --site-root <路径> --package <包> --yes
+  bash install.sh --site-root <路径> --version 1.2.0 --yes
 
 选项:
   --site-root <路径>     站点根目录（必填，除非卸载时能推断）
                          例: /www/wwwroot/auth.example.com
   --port <端口>          后端监听端口（默认 19127，可用环境变量 PORT）
-  --package <文件>       本地 auth_pro-full-vX.Y.Z.tar.gz 路径
-  --version <X.Y.Z>      版本号，用于拼接默认下载 URL
+  --package <文件>       本地 auth_pro-full-vX.Y.Z.tar.gz 路径（推荐：GitHub 可能被墙）
+  --version <X.Y.Z>      版本号，用于拼接默认下载 URL（默认 1.2.0）
   --url <URL>            完整下载地址（覆盖 --version 默认 URL）
-  --data-dir <路径>      数据目录（环境变量 AUTO_PRO_DATA_DIR）
-  --yes, -y              自动确认依赖安装与覆盖操作
+  --data-dir <路径>      数据目录（默认 <site-root>/backend/data）
+  --yes, -y              全自动非交互（依赖安装、Nginx 写入、软件源种子等）
   --skip-deps            跳过依赖检测/自动安装
+  --skip-firewall        跳过防火墙放行
+  --skip-nginx-write     跳过自动写入 Nginx（仅打印片段）
+  --skip-probe           跳过环境探测报告
+  --seed-software-source 强制启用软件源/模板演示种子（--yes 时默认开启）
+  --no-seed-software-source  禁用软件源种子
+  --software-source-admin-key <密钥>  软件源管理密钥（同时写入服务环境变量）
   --uninstall            停止并移除服务单元（保留站点文件）
   --purge                卸载并删除站点内后端与本脚本写入的配置
   --help, -h             显示帮助
@@ -54,13 +74,13 @@ auth-pro 宝塔一键部署脚本
 环境变量:
   PORT                     后端端口（同 --port）
   AUTO_PRO_DATA_DIR        数据目录（同 --data-dir）
-  SOFTWARE_SOURCE_ADMIN_KEY  软件源管理密钥（由 auth_pro 读取，部署时请自行写入
-                             systemd Environment= 或 supervisor environment）
+  SOFTWARE_SOURCE_ADMIN_KEY  软件源管理密钥
 
 示例（宝塔 SSH 一键）:
-  cd /tmp && git clone https://github.com/zxcvbnm25/auth-pro-baota-deploy.git \
-    && cd auth-pro-baota-deploy \
-    && sudo bash install.sh --site-root /www/wwwroot/你的站点 --version 1.2.0 --yes
+  sudo bash install.sh --site-root /www/wwwroot/你的站点 \
+    --package /root/auth_pro-full-v1.2.0.tar.gz --yes
+
+  sudo bash install.sh --site-root /www/wwwroot/你的站点 --version 1.2.0 --yes
 
 默认包地址:
   https://github.com/zxcvbnm25/cloud-control-auth/releases/download/vX.Y.Z/auth_pro-full-vX.Y.Z.tar.gz
@@ -87,6 +107,18 @@ parse_args() {
         ASSUME_YES=1; DEPS_YES=1; shift ;;
       --skip-deps)
         SKIP_DEPS=1; shift ;;
+      --skip-firewall)
+        SKIP_FIREWALL=1; shift ;;
+      --skip-nginx-write)
+        SKIP_NGINX_WRITE=1; shift ;;
+      --skip-probe)
+        SKIP_PROBE=1; shift ;;
+      --seed-software-source)
+        SEED_SOFTWARE_SOURCE=1; shift ;;
+      --no-seed-software-source)
+        SEED_SOFTWARE_SOURCE=0; shift ;;
+      --software-source-admin-key)
+        SOFTWARE_SOURCE_ADMIN_KEY_FLAG="${2:-}"; shift 2 ;;
       --uninstall)
         DO_UNINSTALL=1; shift ;;
       --purge)
@@ -97,11 +129,20 @@ parse_args() {
         die "未知参数: $1（使用 --help 查看说明）" ;;
     esac
   done
+
+  # --yes 默认开启软件源种子
+  if [[ "${SEED_SOFTWARE_SOURCE}" -eq -1 ]]; then
+    if [[ "${ASSUME_YES}" -eq 1 ]]; then
+      SEED_SOFTWARE_SOURCE=1
+    else
+      SEED_SOFTWARE_SOURCE=1
+    fi
+  fi
 }
 
 need_root() {
   if [[ "$(id -u)" -ne 0 ]]; then
-    warn "建议使用 root（sudo）运行，以便安装依赖与写入 systemd/supervisor"
+    warn "建议使用 root（sudo）运行，以便安装依赖、写 Nginx、systemd/supervisor"
   fi
 }
 
@@ -141,13 +182,13 @@ download_or_use_package() {
     resolve_package_url
     archive="${tmp}/auth_pro-full.tar.gz"
     log "下载: ${PACKAGE_URL}"
+    warn "若 GitHub 不可达，请改用 --package /路径/auth_pro-full-v*.tar.gz"
     deps_download "${PACKAGE_URL}" "${archive}" \
-      || die "下载失败，请检查 --url / --version 或网络（GitHub Releases）"
+      || die "下载失败，请使用 --package 指定本地包，或检查 --url / --version / 网络"
     ok "下载完成"
   fi
 
   log "解压到站点根目录: ${SITE_ROOT}"
-  # 备份已有二进制
   local bin_path="${SITE_ROOT}/${BINARY_REL}"
   if [[ -f "${bin_path}" ]]; then
     local bak="${bin_path}.bak.$(date +%Y%m%d%H%M%S)"
@@ -159,7 +200,6 @@ download_or_use_package() {
   ok "解压完成"
 
   if [[ ! -f "${SITE_ROOT}/${BINARY_REL}" ]]; then
-    # 兼容包内带顶层目录的情况
     local nested
     nested="$(find "${SITE_ROOT}" -maxdepth 3 -type f -name 'auth_pro' -path '*/backend/*' 2>/dev/null | head -1 || true)"
     if [[ -n "${nested}" && "${nested}" != "${SITE_ROOT}/${BINARY_REL}" ]]; then
@@ -181,18 +221,32 @@ download_or_use_package() {
 # ---------- 数据目录 ----------
 prepare_data_dir() {
   if [[ -z "${DATA_DIR}" ]]; then
-    DATA_DIR="${SITE_ROOT}/data"
+    DATA_DIR="${SITE_ROOT}/backend/data"
   fi
   mkdir -p "${DATA_DIR}"
   ok "数据目录: ${DATA_DIR}"
   export AUTO_PRO_DATA_DIR="${DATA_DIR}"
   export PORT="${PORT}"
+  if [[ -n "${SOFTWARE_SOURCE_ADMIN_KEY_FLAG}" ]]; then
+    export SOFTWARE_SOURCE_ADMIN_KEY="${SOFTWARE_SOURCE_ADMIN_KEY_FLAG}"
+  fi
+}
+
+env_file_line() {
+  # 生成 Environment= 行（密钥仅写入服务单元，不进仓库）
+  if [[ -n "${SOFTWARE_SOURCE_ADMIN_KEY_FLAG}" ]]; then
+    echo "Environment=SOFTWARE_SOURCE_ADMIN_KEY=${SOFTWARE_SOURCE_ADMIN_KEY_FLAG}"
+  else
+    echo "# Environment=SOFTWARE_SOURCE_ADMIN_KEY=请替换为你的密钥"
+  fi
 }
 
 # ---------- systemd ----------
 install_systemd_unit() {
   local unit="/etc/systemd/system/${SERVICE_NAME}.service"
   local bin="${SITE_ROOT}/${BINARY_REL}"
+  local key_line
+  key_line="$(env_file_line)"
   log "写入 systemd 单元: ${unit}"
   cat > "${unit}" <<UNIT
 [Unit]
@@ -207,9 +261,8 @@ Restart=on-failure
 RestartSec=5
 Environment=PORT=${PORT}
 Environment=AUTO_PRO_DATA_DIR=${DATA_DIR}
-# Environment=SOFTWARE_SOURCE_ADMIN_KEY=请替换为你的密钥
+${key_line}
 
-# 安全加固（可按需调整）
 NoNewPrivileges=true
 ProtectSystem=full
 PrivateTmp=true
@@ -238,7 +291,6 @@ find_supervisor_conf_dir() {
       return 0
     fi
   done
-  # 尝试创建常见路径
   if [[ -d /etc/supervisor ]]; then
     mkdir -p /etc/supervisor/conf.d
     echo /etc/supervisor/conf.d
@@ -253,6 +305,10 @@ install_supervisor_program() {
   conf_dir="$(find_supervisor_conf_dir)"
   conf="${conf_dir}/${SERVICE_NAME}.conf"
   local bin="${SITE_ROOT}/${BINARY_REL}"
+  local env_line="PORT=\"${PORT}\",AUTO_PRO_DATA_DIR=\"${DATA_DIR}\""
+  if [[ -n "${SOFTWARE_SOURCE_ADMIN_KEY_FLAG}" ]]; then
+    env_line="${env_line},SOFTWARE_SOURCE_ADMIN_KEY=\"${SOFTWARE_SOURCE_ADMIN_KEY_FLAG}\""
+  fi
   log "写入 supervisor 配置: ${conf}"
   cat > "${conf}" <<SUP
 [program:${SERVICE_NAME}]
@@ -264,8 +320,7 @@ startsecs=3
 stopwaitsecs=10
 redirect_stderr=true
 stdout_logfile=/var/log/${SERVICE_NAME}.out.log
-environment=PORT="${PORT}",AUTO_PRO_DATA_DIR="${DATA_DIR}"
-;environment=PORT="${PORT}",AUTO_PRO_DATA_DIR="${DATA_DIR}",SOFTWARE_SOURCE_ADMIN_KEY="请替换"
+environment=${env_line}
 SUP
   if command -v supervisorctl >/dev/null 2>&1; then
     supervisorctl reread || true
@@ -287,8 +342,7 @@ install_process_service() {
       install_supervisor_program
       ;;
     *)
-      # 再次检测
-      deps_detect_process_mgr
+      deps_detect_process_mgr || true
       case "${DEPS_PROCESS_MGR}" in
         systemd) install_systemd_unit ;;
         supervisor) install_supervisor_program ;;
@@ -299,32 +353,6 @@ install_process_service() {
       esac
       ;;
   esac
-}
-
-# ---------- Nginx 提示 ----------
-print_nginx_hint() {
-  local snippet="${SCRIPT_DIR}/examples/nginx.conf.snippet"
-  echo
-  log "======== Nginx 反向代理提示 ========"
-  if [[ "${DEPS_HAS_NGINX}" != "1" ]]; then
-    warn "未检测到 Nginx：请在宝塔「软件商店」安装 Nginx，再在站点配置中加入反代"
-  fi
-  log "请在宝塔站点「配置文件」中加入类似片段（端口 ${PORT}）:"
-  if [[ -f "${snippet}" ]]; then
-    sed "s/__PORT__/${PORT}/g; s|__SITE_ROOT__|${SITE_ROOT}|g" "${snippet}"
-  else
-    cat <<NGX
-    location /api/ {
-        proxy_pass http://127.0.0.1:${PORT};
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-NGX
-  fi
-  log "静态资源由站点根目录直接提供（index.html / assets/）"
-  echo
 }
 
 # ---------- 卸载 ----------
@@ -353,47 +381,81 @@ uninstall_service() {
       die "--purge 需要 --site-root"
     fi
     ensure_site_root
-    log "清理站点内后端相关文件（保留前端静态资源需自行确认）..."
+    log "清理站点内后端相关文件..."
     if [[ -f "${SITE_ROOT}/${BINARY_REL}" ]]; then
       rm -f "${SITE_ROOT}/${BINARY_REL}"
       rm -f "${SITE_ROOT}/${BINARY_REL}".bak.* 2>/dev/null || true
       ok "已删除 ${BINARY_REL} 及备份"
     fi
-    if [[ -n "${DATA_DIR}" && -d "${DATA_DIR}" && "${DATA_DIR}" == "${SITE_ROOT}/data" ]]; then
+    # 移除 nginx 标记块 / extension（尽力而为，不删整个站点 conf）
+    local site_name vhost ext
+    site_name="$(basename "${SITE_ROOT}")"
+    ext="/www/server/panel/vhost/nginx/extension/${site_name}/auth_pro.conf"
+    if [[ -f "${ext}" ]]; then
+      rm -f "${ext}"
+      ok "已删除 nginx extension: ${ext}"
+    fi
+    if vhost="$(ngx_find_vhost_for_site "${SITE_ROOT}" 2>/dev/null || true)"; then
+      if [[ -n "${vhost}" && -f "${vhost}" ]] && grep -q "#AUTH_PRO_BEGIN" "${vhost}" 2>/dev/null; then
+        local tmp
+        tmp="$(mktemp)"
+        awk '/#AUTH_PRO_BEGIN/{skip=1;next} /#AUTH_PRO_END/{skip=0;next} !skip{print}' "${vhost}" > "${tmp}"
+        cat "${tmp}" > "${vhost}"
+        rm -f "${tmp}"
+        ok "已从 vhost 移除 AUTH_PRO 标记块"
+        ngx_test_and_reload || true
+      fi
+    fi
+    local default_data="${SITE_ROOT}/backend/data"
+    if [[ -z "${DATA_DIR}" ]]; then
+      DATA_DIR="${default_data}"
+    fi
+    if [[ -d "${DATA_DIR}" ]] && [[ "${DATA_DIR}" == "${default_data}" || "${DATA_DIR}" == "${SITE_ROOT}/data" ]]; then
       if [[ "${ASSUME_YES}" -eq 1 ]]; then
         rm -rf "${DATA_DIR}"
         ok "已删除数据目录 ${DATA_DIR}"
       else
-        warn "数据目录 ${DATA_DIR} 未删除（使用 --yes --purge 可删除默认 data/）"
+        warn "数据目录 ${DATA_DIR} 未删除（使用 --yes --purge 可删除默认 data）"
       fi
     fi
   fi
   ok "卸载完成"
 }
 
-# ---------- 收尾摘要 ----------
-print_summary() {
+# ---------- 收尾清单 ----------
+print_checklist() {
+  local site_name domain hint_url
+  site_name="$(basename "${SITE_ROOT}")"
+  domain="${site_name}"
+  hint_url="https://${domain}"
+
   cat <<SUM
 
-======== 部署完成 ========
-站点根目录:  ${SITE_ROOT}
-后端二进制:  ${SITE_ROOT}/${BINARY_REL}
-监听端口:    ${PORT}
-数据目录:    ${DATA_DIR}
-进程管理:    ${DEPS_PROCESS_MGR}
+======== 部署完成 · 后续清单 ========
+站点根目录:     ${SITE_ROOT}
+站点名:         ${site_name}
+后端二进制:     ${SITE_ROOT}/${BINARY_REL}
+监听端口:       ${PORT}（建议仅本机，经 Nginx 反代）
+数据目录:       ${DATA_DIR}
+进程管理:       ${DEPS_PROCESS_MGR:-未知}
+Nginx 写入:     ${NGX_LAST_MODE:-未写/跳过} ${NGX_LAST_TARGET:+→ ${NGX_LAST_TARGET}}
 
-后续步骤:
-  1. 在宝塔面板为该站点配置 Nginx 反代（见上方片段）
-  2. 在宝塔「数据库」中创建 MySQL，并按 auth_pro 文档配置连接
-  3. 如需管理密钥，设置 SOFTWARE_SOURCE_ADMIN_KEY 后重启服务:
-       systemctl restart ${SERVICE_NAME}
-       # 或: supervisorctl restart ${SERVICE_NAME}
-  4. 放行防火墙/安全组端口（若直连后端）或仅内网反代
+【请逐项确认】
+  □ 1. 浏览器访问站点: ${hint_url}/  （或 http://${domain}/ ）
+  □ 2. 在宝塔「数据库」创建 MySQL 库与用户，并在安装向导中填写连接
+  □ 3. 完成 admin 管理员注册/登录（安装向导）
+  □ 4. 软件源索引 URL:
+         ${hint_url}/api/software-source/index.json
+  □ 5. 健康检查: curl -sS ${hint_url}/healthz  或  http://127.0.0.1:${PORT}/healthz
+  □ 6. 如需管理密钥，确认服务环境已含 SOFTWARE_SOURCE_ADMIN_KEY 后重启:
+         systemctl restart ${SERVICE_NAME}
+         # 或: supervisorctl restart ${SERVICE_NAME}
 
 安全建议:
-  - 不要将 SOFTWARE_SOURCE_ADMIN_KEY 写入可公开访问的文件
-  - 站点目录权限避免 777；后端仅需执行权限
-  - 优先通过 Nginx HTTPS 对外，勿直接暴露 ${PORT}
+  - 不要把 SOFTWARE_SOURCE_ADMIN_KEY 写进可被 Web 访问的目录
+  - 对外只开 80/443；勿直接暴露 ${PORT}
+  - 站点目录避免 777；优先宝塔申请 HTTPS
+  - 本脚本不会删除无关宝塔插件/数据库/其他站点
 SUM
 }
 
@@ -412,21 +474,63 @@ main() {
 
   ensure_site_root
 
+  # A. 环境探测
+  if [[ "${SKIP_PROBE}" -eq 0 ]]; then
+    probe_run_report || die "架构不支持，中止"
+  else
+    warn "已跳过环境探测 (--skip-probe)"
+    deps_check_arch || die "架构不支持"
+  fi
+
+  # B. 依赖
   if [[ "${SKIP_DEPS}" -eq 1 ]]; then
     warn "已跳过依赖检测 (--skip-deps)"
     deps_detect_process_mgr || true
     deps_detect_nginx || true
   else
-    local dep_args=()
+    local dep_args=(--port "${PORT}")
     [[ "${ASSUME_YES}" -eq 1 ]] && dep_args+=(--yes)
-    deps_run_all "${dep_args[@]+"${dep_args[@]}"}" || die "依赖检测/安装失败"
+    [[ "${SKIP_FIREWALL}" -eq 1 ]] && dep_args+=(--skip-firewall)
+    deps_run_all "${dep_args[@]}" || die "依赖检测/安装失败"
   fi
 
+  # C. 宝塔组件
+  local bt_args=()
+  [[ "${ASSUME_YES}" -eq 1 ]] && bt_args+=(--yes)
+  bt_ensure_stack "${bt_args[@]+"${bt_args[@]}"}"
+
+  # E. 包 + 进程
   download_or_use_package
   prepare_data_dir
   install_process_service
-  print_nginx_hint
-  print_summary
+
+  # D. Nginx 自动写入
+  if [[ "${SKIP_NGINX_WRITE}" -eq 1 ]]; then
+    warn "已跳过 Nginx 自动写入 (--skip-nginx-write)"
+    local snippet="${SCRIPT_DIR}/examples/nginx.conf.snippet"
+    if [[ -f "${snippet}" ]]; then
+      log "参考片段:"
+      sed "s/__PORT__/${PORT}/g; s|__SITE_ROOT__|${SITE_ROOT}|g" "${snippet}"
+    fi
+  else
+    ngx_auto_configure "${SITE_ROOT}" "${PORT}"
+  fi
+
+  # F. 软件源种子
+  local seed_args=()
+  if [[ "${SEED_SOFTWARE_SOURCE}" -eq 1 ]]; then
+    seed_args+=(--seed)
+  else
+    seed_args+=(--no-seed)
+  fi
+  [[ "${ASSUME_YES}" -eq 1 ]] && seed_args+=(--yes)
+  if [[ -n "${SOFTWARE_SOURCE_ADMIN_KEY_FLAG}" ]]; then
+    seed_args+=(--admin-key "${SOFTWARE_SOURCE_ADMIN_KEY_FLAG}")
+  fi
+  seed_run "${SCRIPT_DIR}" "${SITE_ROOT}" "${DATA_DIR}" "${PORT}" "${seed_args[@]}"
+
+  # G. 清单
+  print_checklist
 }
 
 main "$@"
