@@ -83,7 +83,7 @@ auth-pro 宝塔「真·全自动一键」部署脚本
   sudo bash install.sh --site-root /www/wwwroot/你的站点 --version 1.2.0 --yes
 
 默认包地址:
-  https://github.com/zxcvbnm25/cloud-control-auth/releases/download/vX.Y.Z/auth_pro-full-vX.Y.Z.tar.gz
+  https://github.com/zxcvbnm25/auth-pro-baota-deploy/releases/download/vX.Y.Z/auth_pro-full-vX.Y.Z.tar.gz
 USAGE
 }
 
@@ -152,7 +152,7 @@ resolve_package_url() {
   fi
   local ver="${VERSION:-${DEFAULT_VERSION}}"
   VERSION="${ver}"
-  PACKAGE_URL="https://github.com/zxcvbnm25/cloud-control-auth/releases/download/v${ver}/auth_pro-full-v${ver}.tar.gz"
+  PACKAGE_URL="https://github.com/zxcvbnm25/auth-pro-baota-deploy/releases/download/v${ver}/auth_pro-full-v${ver}.tar.gz"
 }
 
 ensure_site_root() {

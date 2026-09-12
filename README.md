@@ -14,7 +14,7 @@
 默认下载地址：
 
 ```text
-https://github.com/zxcvbnm25/cloud-control-auth/releases/download/vX.Y.Z/auth_pro-full-vX.Y.Z.tar.gz
+https://github.com/zxcvbnm25/auth-pro-baota-deploy/releases/download/vX.Y.Z/auth_pro-full-vX.Y.Z.tar.gz
 ```
 
 > **强烈建议使用 `--package` 本地包**：部分服务器访问 GitHub Releases 不稳定或被墙。
