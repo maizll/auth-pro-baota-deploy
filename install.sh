@@ -236,14 +236,10 @@ download_or_use_package() {
 # 一键部署不应静默留下「已安装」状态却没有用户记得的管理员密码。
 clear_install_markers() {
   local roots=("$@")
-  local f
-  for f in \
-      install.lock \
-      db.json
-  do
-    local p
-    for rootp in "${roots[@]}"; do
-      [[ -n "${rootp}" ]] || continue
+  local rootp f p
+  for rootp in "${roots[@]}"; do
+    [[ -n "${rootp}" && -e "${rootp}" ]] || continue
+    for f in install.lock db.json; do
       p="${rootp%/}/${f}"
       if [[ -e "${p}" ]]; then
         log "清除安装标记: ${p}"
@@ -251,20 +247,20 @@ clear_install_markers() {
       fi
     done
   done
-  # 常见误放位置
-  for p in \
-      "${SITE_ROOT}/install.lock" \
-      "${SITE_ROOT}/backend/install.lock" \
-      "${SITE_ROOT}/backend/data/install.lock" \
-      "${SITE_ROOT}/db.json" \
-      "${SITE_ROOT}/backend/db.json" \
-      "${SITE_ROOT}/backend/data/db.json"
-  do
-    if [[ -e "${p}" ]]; then
-      log "清除安装标记: ${p}"
-      rm -f "${p}"
-    fi
-  done
+}
+
+# 从 systemd/supervisor 单元里解析真实 AUTO_PRO_DATA_DIR
+resolve_runtime_data_dir() {
+  local env_dir=""
+  if [[ -f "/etc/systemd/system/${SERVICE_NAME}.service" ]]; then
+    env_dir="$(grep -E '^Environment=.*AUTO_PRO_DATA_DIR=' "/etc/systemd/system/${SERVICE_NAME}.service" 2>/dev/null \
+      | sed -n 's/.*AUTO_PRO_DATA_DIR=\([^ ]*\).*/\1/p' | tail -1 || true)"
+  fi
+  if [[ -z "${env_dir}" && -f "/etc/supervisor/conf.d/${SERVICE_NAME}.conf" ]]; then
+    env_dir="$(grep -E 'AUTO_PRO_DATA_DIR=' "/etc/supervisor/conf.d/${SERVICE_NAME}.conf" 2>/dev/null \
+      | sed -n 's/.*AUTO_PRO_DATA_DIR="\?\([^" ,]*\)"\?.*/\1/p' | tail -1 || true)"
+  fi
+  printf '%s' "${env_dir}"
 }
 
 ensure_fresh_install() {
@@ -273,31 +269,64 @@ ensure_fresh_install() {
   fi
   mkdir -p "${DATA_DIR}"
 
-  local lock="${DATA_DIR}/install.lock"
+  local runtime_dir
+  runtime_dir="$(resolve_runtime_data_dir)"
+
   if [[ "${DO_FRESH}" -eq 1 ]]; then
     log "已指定 --fresh：重置安装状态，强制进入系统安装向导"
-    # 停服务避免占用文件
+
     if command -v systemctl >/dev/null 2>&1; then
       systemctl stop "${SERVICE_NAME}" 2>/dev/null || true
     fi
     if command -v supervisorctl >/dev/null 2>&1; then
       supervisorctl stop "${SERVICE_NAME}" 2>/dev/null || true
     fi
-    clear_install_markers "${DATA_DIR}" "${SITE_ROOT}" "${SITE_ROOT}/backend" "${SITE_ROOT}/backend/data"
-    # 清空数据目录（保留目录本身）
-    if [[ -d "${DATA_DIR}" ]]; then
-      log "清空数据目录内容: ${DATA_DIR}"
-      find "${DATA_DIR}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+    # 兜底杀掉站点二进制，避免旧进程仍读旧锁
+    if [[ -x "${SITE_ROOT}/${BINARY_REL}" ]]; then
+      pkill -f "${SITE_ROOT}/${BINARY_REL}" 2>/dev/null || true
     fi
-    mkdir -p "${DATA_DIR}"
+
+    # 1) 显式目录
+    clear_install_markers \
+      "${DATA_DIR}" \
+      "${runtime_dir}" \
+      "${SITE_ROOT}" \
+      "${SITE_ROOT}/backend" \
+      "${SITE_ROOT}/backend/data" \
+      "$(dirname "${SITE_ROOT}/${BINARY_REL}")"
+
+    # 2) 站点内全量查找 install.lock / db.json（后端 getDataDir 可能落在 cwd 或二进制旁）
+    local found
+    while IFS= read -r found; do
+      [[ -n "${found}" ]] || continue
+      log "清除安装标记(扫描): ${found}"
+      rm -f "${found}"
+    done < <(find "${SITE_ROOT}" \( -name 'install.lock' -o -name 'db.json' \) -type f 2>/dev/null || true)
+
+    # 3) 清空数据目录内容
+    for d in "${DATA_DIR}" "${runtime_dir}"; do
+      [[ -n "${d}" && -d "${d}" ]] || continue
+      log "清空数据目录内容: ${d}"
+      find "${d}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+      mkdir -p "${d}"
+    done
+
     ok "已重置为未安装状态（请随后在浏览器完成安装向导并牢记管理员密码）"
     warn "请在宝塔删除/重建对应 MySQL 库，避免向导连到旧库仍显示已有账号"
+
+    # 4) 起服务前先校验：若仍有锁则失败
+    local leftover
+    leftover="$(find "${SITE_ROOT}" -name 'install.lock' -type f 2>/dev/null | head -5 || true)"
+    if [[ -n "${leftover}" ]]; then
+      die "仍检测到 install.lock，无法保证进入向导:\n${leftover}"
+    fi
     return 0
   fi
 
-  # 未指定 --fresh：若已安装，明确警告
-  if [[ -f "${lock}" ]]; then
-    warn "检测到已安装标记: ${lock}"
+  local lock="${DATA_DIR}/install.lock"
+  if [[ -f "${lock}" ]] || [[ -n "${runtime_dir}" && -f "${runtime_dir}/install.lock" ]] \
+     || find "${SITE_ROOT}" -name 'install.lock' -type f 2>/dev/null | grep -q .; then
+    warn "检测到已安装标记（install.lock）"
     warn "浏览器将跳过安装向导。若忘记管理员密码，请加 --fresh 重跑，例如："
     warn "  sudo bash install.sh --site-root ${SITE_ROOT} --yes --fresh"
     if [[ "${ASSUME_YES}" -eq 1 ]]; then
@@ -622,6 +651,23 @@ main() {
     seed_args+=(--admin-key "${SOFTWARE_SOURCE_ADMIN_KEY_FLAG}")
   fi
   seed_run "${SCRIPT_DIR}" "${SITE_ROOT}" "${DATA_DIR}" "${PORT}" "${seed_args[@]}"
+
+  # 校验安装状态 API（--fresh 后必须是未安装）
+  if [[ "${DO_FRESH}" -eq 1 ]]; then
+    sleep 1
+    local status_json=""
+    status_json="$(curl -fsS --max-time 5 "http://127.0.0.1:${PORT}/api/install/status" 2>/dev/null || true)"
+    if [[ -z "${status_json}" ]]; then
+      status_json="$(curl -fsS --max-time 5 "https://127.0.0.1:${PORT}/api/install/status" -k 2>/dev/null || true)"
+    fi
+    log "安装状态探测: ${status_json:-<无法连接后端>}"
+    if echo "${status_json}" | grep -q '"installed":true'; then
+      die "后端仍报告 installed=true。请手动执行: find ${SITE_ROOT} -name install.lock -delete && systemctl restart ${SERVICE_NAME}"
+    fi
+    if echo "${status_json}" | grep -q '"installed":false'; then
+      ok "后端已确认未安装，打开站点应进入安装向导"
+    fi
+  fi
 
   # G. 清单
   print_checklist
